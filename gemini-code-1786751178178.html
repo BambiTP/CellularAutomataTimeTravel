@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elementary Cellular Automaton</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f131a;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 25, 32, 0.95);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            border: 1px solid #2a3241;
+            backdrop-filter: blur(4px);
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        label {
+            font-weight: bold;
+            font-size: 14px;
+            min-width: 40px;
+        }
+
+        input[type="number"], select {
+            padding: 6px;
+            border: 1px solid #3c465a;
+            background: #181d26;
+            color: #fff;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        input[type="number"] {
+            width: 70px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        input[type="number"]:focus, select:focus {
+            border-color: #55c2da;
+        }
+
+        button {
+            background: #232b38;
+            color: #fff;
+            border: 1px solid #3c465a;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        button:hover:not(:disabled) {
+            background: #2e394a;
+            border-color: #55c2da;
+        }
+
+        button.active {
+            background: #55c2da;
+            color: #000;
+            border-color: #55c2da;
+            font-weight: bold;
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        #rule-visualizer {
+            display: flex;
+            gap: 8px;
+            background: #11151c;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #2a3241;
+            justify-content: center;
+        }
+
+        .rule-block {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+        }
+
+        .rule-row {
+            display: flex;
+            gap: 1px;
+        }
+
+        .v-cell {
+            width: 14px;
+            height: 14px;
+            box-sizing: border-box;
+            border: 1px solid #444;
+            background-color: transparent;
+        }
+
+        .v-cell.active {
+            background-color: #55c2da;
+            border-color: #55c2da;
+        }
+        
+        .hint {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+            line-height: 1.5;
+        }
+
+        canvas {
+            display: block;
+        }
+        
+        canvas.tool-pan { cursor: grab; }
+        canvas.tool-draw { cursor: crosshair; }
+        canvas.panning { cursor: grabbing !important; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <div class="control-group">
+            <label for="ruleInput">Rule:</label>
+            <input type="number" id="ruleInput" min="0" max="255" value="30">
+            <button id="btnBack" title="Step Backward">⏮</button>
+            <button id="btnPlay" title="Play / Pause">▶ Play</button>
+            <button id="btnStep" title="Step Forward">⏭</button>
+            <button id="btnReset" title="Reset Grid">🔄 Reset</button>
+        </div>
+
+        <div class="control-group">
+            <label for="toolSelect">Tool:</label>
+            <select id="toolSelect">
+                <option value="pan">🖐 Pan & Zoom</option>
+                <option value="affect">✏️ Draw (Clash Timeline)</option>
+                <option value="overlay">🖍️ Draw (Overlay Only)</option>
+            </select>
+            <button id="btnClearOverlay" style="display:none;" title="Clear Overlay">🧹 Clear</button>
+        </div>
+
+        <div id="rule-visualizer"></div>
+
+        <div class="hint">
+            • <b>Right-Click</b> & drag to Pan anywhere<br>
+            • Draw <b>above or below</b> to spawn new timelines<br>
+            • Timelines propagate downward and clash!<br>
+            • Hold <b>Shift + Click</b> to Erase pixels
+        </div>
+    </div>
+
+    <canvas id="ca-canvas" class="tool-pan"></canvas>
+
+    <script>
+        const canvas = document.getElementById('ca-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Simulation State
+        const GRID_WIDTH = 301; 
+        let rule = 30;
+        
+        // Use a Map to support negative Y coordinates (above starting point) and positive Y coordinates
+        let historyMap = new Map(); 
+        let frontiers = new Set(); 
+        
+        let isPlaying = false;
+        let playInterval;
+        let canStepBackward = true;
+
+        // Drawing State
+        let overlayPixels = new Set(); 
+
+        // Viewport State
+        let cellSize = 15; 
+        let offsetX = 0;
+        let offsetY = 0;
+        let scale = 1;
+
+        // UI Elements
+        const ruleInput = document.getElementById('ruleInput');
+        const btnPlay = document.getElementById('btnPlay');
+        const btnStep = document.getElementById('btnStep');
+        const btnBack = document.getElementById('btnBack');
+        const btnReset = document.getElementById('btnReset');
+        const ruleVisualizer = document.getElementById('rule-visualizer');
+        const toolSelect = document.getElementById('toolSelect');
+        const btnClearOverlay = document.getElementById('btnClearOverlay');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            draw();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function updateRuleVisualizer() {
+            ruleVisualizer.innerHTML = '';
+            const ruleBinary = rule.toString(2).padStart(8, '0');
+
+            for (let i = 7; i >= 0; i--) {
+                const block = document.createElement('div');
+                block.className = 'rule-block';
+
+                const topRow = document.createElement('div');
+                topRow.className = 'rule-row';
+
+                for (let j = 2; j >= 0; j--) {
+                    const cell = document.createElement('div');
+                    cell.className = 'v-cell';
+                    if ((i & (1 << j)) !== 0) cell.classList.add('active');
+                    topRow.appendChild(cell);
+                }
+
+                const bottomRow = document.createElement('div');
+                bottomRow.className = 'rule-row';
+                const resultCell = document.createElement('div');
+                resultCell.className = 'v-cell';
+
+                const bitIndex = 7 - i;
+                if (ruleBinary[bitIndex] === '1') resultCell.classList.add('active');
+                
+                bottomRow.appendChild(resultCell);
+                block.appendChild(topRow);
+                block.appendChild(bottomRow);
+                ruleVisualizer.appendChild(block);
+            }
+        }
+
+        function init() {
+            historyMap.clear();
+            frontiers.clear();
+            
+            let firstRow = new Uint8Array(GRID_WIDTH);
+            firstRow[Math.floor(GRID_WIDTH / 2)] = 1;
+            
+            historyMap.set(0, firstRow);
+            frontiers.add(0); 
+
+            offsetX = canvas.width / 2 - (GRID_WIDTH * cellSize) / 2;
+            offsetY = 250; // Give vertical space to look both above and below Y=0
+            scale = 1;
+
+            canStepBackward = true;
+            btnBack.disabled = false;
+            btnBack.title = "Step Backward";
+
+            updateRuleVisualizer();
+            draw();
+        }
+
+        function stepForward() {
+            if (frontiers.size === 0) return; 
+
+            const ruleBinary = rule.toString(2).padStart(8, '0');
+            let nextFrontiers = new Set();
+            let nextState = new Map();
+
+            for (let y of frontiers) {
+                const currentRow = historyMap.get(y);
+                if (!currentRow) continue;
+                
+                const nextRow = new Uint8Array(GRID_WIDTH);
+
+                for (let i = 0; i < GRID_WIDTH; i++) {
+                    const left = currentRow[(i - 1 + GRID_WIDTH) % GRID_WIDTH];
+                    const center = currentRow[i];
+                    const right = currentRow[(i + 1) % GRID_WIDTH];
+                    
+                    const neighborhood = (left << 2) | (center << 1) | right;
+                    const bitIndex = 7 - neighborhood; 
+                    nextRow[i] = parseInt(ruleBinary[bitIndex]);
+                }
+
+                nextState.set(y + 1, nextRow);
+            }
+
+            for (let [targetY, row] of nextState) {
+                historyMap.set(targetY, row);
+                nextFrontiers.add(targetY);
+            }
+
+            frontiers = nextFrontiers;
+            draw();
+        }
+
+        function stepBackward() {
+            if (!canStepBackward) return; 
+            // Simple linear step back for default Y=0 timeline
+            if (historyMap.size > 1 && historyMap.has(historyMap.size - 1)) {
+                const maxY = Math.max(...historyMap.keys());
+                historyMap.delete(maxY);
+                frontiers.clear();
+                frontiers.add(Math.max(...historyMap.keys()));
+                draw();
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = '#0f131a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(offsetX, offsetY);
+            ctx.scale(scale, scale);
+
+            // Draw CA Cells from the coordinate map (supports negative and positive Y)
+            ctx.fillStyle = '#55c2da'; 
+            for (let [y, row] of historyMap.entries()) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    if (row[x] === 1) {
+                        ctx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
+                    } 
+                }
+            }
+
+            // Draw Overlay Pixels (Yellow)
+            ctx.fillStyle = '#ffd700'; 
+            for (const key of overlayPixels) {
+                const [x, y] = key.split(',').map(Number);
+                ctx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
+            }
+
+            ctx.restore();
+        }
+
+        // --- Event Listeners UI ---
+
+        ruleInput.addEventListener('change', (e) => {
+            let val = parseInt(e.target.value);
+            if (val < 0) val = 0;
+            if (val > 255) val = 255;
+            ruleInput.value = val;
+            rule = val;
+            updateRuleVisualizer();
+        });
+
+        toolSelect.addEventListener('change', (e) => {
+            canvas.className = e.target.value === 'pan' ? 'tool-pan' : 'tool-draw';
+            btnClearOverlay.style.display = e.target.value === 'overlay' ? 'flex' : 'none';
+        });
+
+        btnClearOverlay.addEventListener('click', () => {
+            overlayPixels.clear();
+            draw();
+        });
+
+        btnStep.addEventListener('click', () => {
+            pauseSimulation();
+            stepForward();
+        });
+
+        btnBack.addEventListener('click', () => {
+            pauseSimulation();
+            stepBackward();
+        });
+
+        btnReset.addEventListener('click', () => {
+            pauseSimulation();
+            init();
+        });
+
+        btnPlay.addEventListener('click', () => {
+            if (isPlaying) pauseSimulation();
+            else startSimulation();
+        });
+
+        function startSimulation() {
+            isPlaying = true;
+            btnPlay.innerHTML = '⏸ Pause';
+            btnPlay.classList.add('active');
+            playInterval = setInterval(stepForward, 1000 / 15); 
+        }
+
+        function pauseSimulation() {
+            isPlaying = false;
+            btnPlay.innerHTML = '▶ Play';
+            btnPlay.classList.remove('active');
+            clearInterval(playInterval);
+        }
+
+        // --- Mouse Interaction Logic (Pan & Draw) ---
+
+        let isPanning = false;
+        let isDrawing = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+        function handleDraw(e) {
+            const mouseX = e.clientX;
+            const mouseY = e.clientY;
+            
+            const gridX = Math.floor((mouseX - offsetX) / (cellSize * scale));
+            const gridY = Math.floor((mouseY - offsetY) / (cellSize * scale));
+
+            if (gridX >= 0 && gridX < GRID_WIDTH) {
+                const isErase = e.shiftKey;
+                
+                if (toolSelect.value === 'overlay') {
+                    const key = `${gridX},${gridY}`;
+                    if (isErase) overlayPixels.delete(key);
+                    else overlayPixels.add(key);
+                    draw();
+                } 
+                else if (toolSelect.value === 'affect') {
+                    const val = isErase ? 0 : 1;
+                    
+                    if (!historyMap.has(gridY)) {
+                        historyMap.set(gridY, new Uint8Array(GRID_WIDTH));
+                    }
+                    
+                    if (historyMap.get(gridY)[gridX] !== val) {
+                        historyMap.get(gridY)[gridX] = val;
+                        
+                        // Any drawn row (above or below) becomes an active timeline frontier!
+                        frontiers.add(gridY);
+                        
+                        canStepBackward = false;
+                        btnBack.disabled = true;
+                        btnBack.title = "Timelines are clashing. Reset to enable backward stepping.";
+                        draw();
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 2 || toolSelect.value === 'pan') {
+                isPanning = true;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                canvas.classList.add('panning');
+            } else if (e.button === 0) {
+                isDrawing = true;
+                handleDraw(e);
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 2 || (e.button === 0 && toolSelect.value === 'pan')) {
+                isPanning = false;
+                canvas.classList.remove('panning');
+            }
+            if (e.button === 0) {
+                isDrawing = false;
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                const dx = e.clientX - lastMouseX;
+                const dy = e.clientY - lastMouseY;
+                offsetX += dx;
+                offsetY += dy;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                draw();
+            } else if (isDrawing) {
+                handleDraw(e);
+            }
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            
+            const zoomSensitivity = 0.001;
+            const delta = e.deltaY * zoomSensitivity;
+            const zoomFactor = Math.exp(-delta);
+            
+            const mouseX = e.clientX;
+            const mouseY = e.clientY;
+
+            offsetX = mouseX - (mouseX - offsetX) * zoomFactor;
+            offsetY = mouseY - (mouseY - offsetY) * zoomFactor;
+            scale *= zoomFactor;
+
+            if (scale < 0.1) scale = 0.1;
+            if (scale > 5.0) scale = 5.0;
+
+            draw();
+        }, { passive: false });
+
+        resizeCanvas();
+        init();
+
+    </script>
+</body>
+</html>
