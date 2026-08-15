@@ -174,6 +174,22 @@
             border: 1px solid #2a3241;
             border-radius: 6px;
             padding: 5px 8px;
+            user-select: none;
+            transition: opacity 0.15s ease, border-color 0.15s ease;
+        }
+
+        .seq-item.dragging {
+            opacity: 0.4;
+        }
+
+        .seq-item.drag-over {
+            border-color: #55c2da;
+        }
+
+        .seq-drag-handle {
+            cursor: grab;
+            color: #666;
+            flex-shrink: 0;
         }
 
         .seq-swatch {
@@ -655,13 +671,16 @@
         // by clearing its own old marks rather than guessing what to undo.
         let bandSequence = [];
         let sequenceOverrideYs = [];
+        let draggedBandIndex = null;
 
         function renderBandSequence() {
             ruleSequenceList.innerHTML = '';
             bandSequence.forEach((band, i) => {
                 const item = document.createElement('div');
                 item.className = 'seq-item';
+                item.draggable = true;
                 item.innerHTML = `
+                    <span class="seq-drag-handle" title="Drag to reorder">⠿</span>
                     <span class="seq-swatch" style="background:${ruleColor(band.rule)}"></span>
                     <span class="seq-label">Rule ${band.rule} — ${band.length} row${band.length === 1 ? '' : 's'}</span>
                     <button title="Remove">✕</button>
@@ -670,6 +689,33 @@
                     bandSequence.splice(i, 1);
                     applyBandSequence();
                 });
+
+                item.addEventListener('dragstart', (e) => {
+                    draggedBandIndex = i;
+                    item.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                    draggedBandIndex = null;
+                });
+                item.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    item.classList.add('drag-over');
+                });
+                item.addEventListener('dragleave', () => {
+                    item.classList.remove('drag-over');
+                });
+                item.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    item.classList.remove('drag-over');
+                    if (draggedBandIndex === null || draggedBandIndex === i) return;
+                    const [moved] = bandSequence.splice(draggedBandIndex, 1);
+                    bandSequence.splice(i, 0, moved);
+                    draggedBandIndex = null;
+                    applyBandSequence();
+                });
+
                 ruleSequenceList.appendChild(item);
             });
         }
