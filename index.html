@@ -629,6 +629,16 @@
             renderBandSequence();
         }
 
+        // The Rule box only reports changes via its 'change' event, which needs a
+        // blur/Enter to fire -- if you type a new value and click Play/Step before
+        // that happens, Play would start on the stale rule. Called right before
+        // acting, this catches whatever's currently in the box regardless of event
+        // timing, so switching the rule and immediately hitting Play always works.
+        function syncRuleFromInput() {
+            const val = parseInt(ruleInput.value);
+            if (!isNaN(val)) setLiveRule(Math.max(0, Math.min(255, val)));
+        }
+
         ruleInput.addEventListener('change', (e) => {
             let val = parseInt(e.target.value);
             if (val < 0) val = 0;
@@ -825,6 +835,7 @@
 
         btnStep.addEventListener('click', () => {
             pauseSimulation();
+            syncRuleFromInput();
             stepForward();
         });
 
@@ -855,8 +866,12 @@
         btnCenter.addEventListener('click', centerView);
 
         btnPlay.addEventListener('click', () => {
-            if (isPlaying) pauseSimulation();
-            else startSimulation();
+            if (isPlaying) {
+                pauseSimulation();
+            } else {
+                syncRuleFromInput();
+                startSimulation();
+            }
         });
 
         function startSimulation() {
