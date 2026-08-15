@@ -134,10 +134,75 @@
             line-height: 1.5;
         }
 
+        #rule-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-width: 260px;
+        }
+
+        .legend-chip {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            background: #181d26;
+            border: 1px solid #2a3241;
+            border-radius: 10px;
+            padding: 2px 8px 2px 4px;
+        }
+
+        .legend-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        input[type="checkbox"] {
+            width: 15px;
+            height: 15px;
+            accent-color: #55c2da;
+            cursor: pointer;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: normal;
+            min-width: 0;
+            cursor: pointer;
+        }
+
+        #row-rule-popup {
+            position: fixed;
+            z-index: 100;
+            background: rgba(20, 25, 32, 0.98);
+            border: 1px solid #55c2da;
+            border-radius: 8px;
+            padding: 8px 10px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        #row-rule-popup label {
+            font-size: 11px;
+            color: #aaa;
+            min-width: 0;
+        }
+
+        #row-rule-popup input {
+            width: 60px;
+        }
+
         canvas {
             display: block;
         }
-        
+
         canvas.tool-pan { cursor: grab; }
         canvas.tool-draw { cursor: crosshair; }
         canvas.panning { cursor: grabbing !important; }
@@ -165,10 +230,23 @@
             <button id="btnClearOverlay" style="display:none;" title="Clear Overlay">🧹 Clear</button>
         </div>
 
+        <div class="control-group">
+            <label class="checkbox-label"><input type="checkbox" id="chkXWrap" checked> Left/Right wrap</label>
+        </div>
+
+        <div class="control-group">
+            <label class="checkbox-label"><input type="checkbox" id="chkYLoop"> Bottom loops after</label>
+            <input type="number" id="yLoopPeriodInput" min="2" max="2000" value="80">
+            <label style="min-width:0;">steps</label>
+        </div>
+
         <div id="rule-visualizer"></div>
+
+        <div id="rule-legend"></div>
 
         <div class="hint">
             • <b>Right-Click</b> & drag to Pan anywhere<br>
+            • <b>Right-Click</b> (no drag) a row to give it its own rule -- each rule gets its own color<br>
             • Draw <b>above or below</b> to seed a new timeline<br>
             • Editing a row instantly resimulates everything below it -- that's the clash<br>
             • Hold <b>Shift + Click</b> to Erase pixels
@@ -193,6 +271,18 @@
         let minY = 0;
         let maxY = 0;
 
+        // Per-row rule overrides: sparse map of Y -> rule, set only where a user
+        // right-clicked a row to change it. activeRuleMap is the dense counterpart --
+        // every row that exists in historyMap also has an entry here, either its own
+        // override or the rule it inherited from the row above (see activeRuleAt).
+        let ruleOverrides = new Map();
+        let activeRuleMap = new Map();
+
+        // Boundary conditions
+        let xWrap = true;          // left/right edges wrap (toroidal) vs. infinite (dead) edges
+        let yLoopEnabled = false;  // bottom wraps back to the top after yLoopPeriod steps
+        let yLoopPeriod = 80;
+
         let isPlaying = false;
         let playInterval;
 
@@ -212,8 +302,12 @@
         const btnBack = document.getElementById('btnBack');
         const btnReset = document.getElementById('btnReset');
         const ruleVisualizer = document.getElementById('rule-visualizer');
+        const ruleLegend = document.getElementById('rule-legend');
         const toolSelect = document.getElementById('toolSelect');
         const btnClearOverlay = document.getElementById('btnClearOverlay');
+        const chkXWrap = document.getElementById('chkXWrap');
+        const chkYLoop = document.getElementById('chkYLoop');
+        const yLoopPeriodInput = document.getElementById('yLoopPeriodInput');
 
         function resizeCanvas() {
             canvas.width = window.innerWidth;
@@ -257,13 +351,16 @@
 
         function init() {
             historyMap.clear();
+            ruleOverrides.clear();
+            activeRuleMap.clear();
 
             let firstRow = new Uint8Array(GRID_WIDTH);
             firstRow[Math.floor(GRID_WIDTH / 2)] = 1;
 
-            historyMap.set(0, firstRow);
             minY = 0;
             maxY = 0;
+            historyMap.set(toSlot(0), firstRow);
+            activeRuleMap.set(toSlot(0), rule);
 
             offsetX = canvas.width / 2 - (GRID_WIDTH * cellSize) / 2;
             offsetY = 250; // Give vertical space to look both above and below Y=0
@@ -271,16 +368,34 @@
 
             updateBackButton();
             updateRuleVisualizer();
+            updateRuleLegend();
             draw();
         }
 
+        // Maps a logical row Y to its storage key. Identity normally; when the bottom
+        // loops, this wraps Y into a fixed-size ring of yLoopPeriod rows, so stepping
+        // forever cycles through (and overwrites) the same slots -- a real, not merely
+        // visual, loop back to the top.
+        function toSlot(y) {
+            if (!yLoopEnabled) return y;
+            return ((y % yLoopPeriod) + yLoopPeriod) % yLoopPeriod;
+        }
+
         // Pure CA transition: one row -> the next row, given the current rule.
+        // Respects xWrap: wraps left/right neighbors toroidally, or treats
+        // off-grid neighbors as dead (0) when the edges are "infinite".
         function computeNextRow(currentRow, ruleBinary) {
             const nextRow = new Uint8Array(GRID_WIDTH);
             for (let i = 0; i < GRID_WIDTH; i++) {
-                const left = currentRow[(i - 1 + GRID_WIDTH) % GRID_WIDTH];
+                let left, right;
+                if (xWrap) {
+                    left = currentRow[(i - 1 + GRID_WIDTH) % GRID_WIDTH];
+                    right = currentRow[(i + 1) % GRID_WIDTH];
+                } else {
+                    left = i === 0 ? 0 : currentRow[i - 1];
+                    right = i === GRID_WIDTH - 1 ? 0 : currentRow[i + 1];
+                }
                 const center = currentRow[i];
-                const right = currentRow[(i + 1) % GRID_WIDTH];
 
                 const neighborhood = (left << 2) | (center << 1) | right;
                 const bitIndex = 7 - neighborhood;
@@ -289,58 +404,121 @@
             return nextRow;
         }
 
+        // The rule in effect at row y: its own override if it has one, else whatever
+        // was flowing in from the row above (fallback).
+        function activeRuleAt(y, fallback) {
+            return ruleOverrides.has(y) ? ruleOverrides.get(y) : fallback;
+        }
+
+        function ruleColor(r) {
+            const hue = (r * 137.508) % 360; // golden angle -> well-spread hues across 0-255
+            return `hsl(${hue.toFixed(1)}, 70%, 60%)`;
+        }
+
+        function updateRuleLegend() {
+            const seen = new Map(); // rule -> count, in first-seen order
+            for (const r of activeRuleMap.values()) {
+                seen.set(r, (seen.get(r) || 0) + 1);
+            }
+            ruleLegend.innerHTML = '';
+            for (const [r] of [...seen.entries()].sort((a, b) => a[0] - b[0])) {
+                const chip = document.createElement('div');
+                chip.className = 'legend-chip';
+                chip.innerHTML = `<span class="legend-swatch" style="background:${ruleColor(r)}"></span>Rule ${r}`;
+                ruleLegend.appendChild(chip);
+            }
+        }
+
+        function canStepBack() {
+            if (maxY <= minY) return false;
+            // Once the ring has wrapped past its own period, the row we'd be restoring
+            // has already been overwritten -- there's nothing left to step back to.
+            if (yLoopEnabled && (maxY - minY + 1) > yLoopPeriod) return false;
+            return true;
+        }
+
         function updateBackButton() {
-            btnBack.disabled = maxY <= minY;
-            btnBack.title = btnBack.disabled ? "No earlier row to step back to" : "Step Backward";
+            const ok = canStepBack();
+            btnBack.disabled = !ok;
+            btnBack.title = ok
+                ? "Step Backward"
+                : (yLoopEnabled ? "Can't step back after the loop wraps" : "No earlier row to step back to");
         }
 
         function stepForward() {
-            const ruleBinary = rule.toString(2).padStart(8, '0');
-            const currentRow = historyMap.get(maxY);
+            const fromSlot = toSlot(maxY);
+            const currentRow = historyMap.get(fromSlot);
+            const currentRule = activeRuleMap.get(fromSlot) ?? rule;
+            const ruleBinary = currentRule.toString(2).padStart(8, '0');
             const nextRow = computeNextRow(currentRow, ruleBinary);
+
             maxY += 1;
-            historyMap.set(maxY, nextRow);
+            const nextSlot = toSlot(maxY);
+            historyMap.set(nextSlot, nextRow);
+            activeRuleMap.set(nextSlot, activeRuleAt(maxY, currentRule));
+
             updateBackButton();
             draw();
         }
 
         function stepBackward() {
-            if (maxY <= minY) return;
-            historyMap.delete(maxY);
+            if (!canStepBack()) return;
+            const s = toSlot(maxY);
+            historyMap.delete(s);
+            activeRuleMap.delete(s);
             maxY -= 1;
             updateBackButton();
             draw();
         }
 
-        // This is the "timeline" mechanic: editing row `editedY` makes it a new seed.
-        // Everything below it (down to the current bottom of history) is truly, synchronously
-        // recomputed from that seed -- not just visually, but a full recalculation -- so the
-        // grid is always internally consistent: no row is ever stale relative to the row above it.
-        // If the edit is above/below the known range, the range is extended (with blank rows
-        // filling any gap) so the cascade always has unbroken ground to walk down.
+        // This is the "timeline" mechanic: editing row `editedY` (a cell, or its rule)
+        // makes it a new seed. Everything below it (down to the current bottom of
+        // history) is truly, synchronously recomputed from that seed -- not just
+        // visually, but a full recalculation -- so the grid is always internally
+        // consistent: no row is ever stale relative to the row above it. Any deeper
+        // row that already had its own rule override keeps governing from there down;
+        // only its cell contents get refreshed by the new data flowing into it.
+        // If the edit is above/below the known range, the range is extended (with
+        // blank rows filling any gap) so the cascade always has unbroken ground to
+        // walk down.
         function cascadeFrom(editedY) {
             if (editedY < minY) {
                 for (let y = editedY + 1; y < minY; y++) {
-                    historyMap.set(y, new Uint8Array(GRID_WIDTH));
+                    const s = toSlot(y);
+                    if (!historyMap.has(s)) historyMap.set(s, new Uint8Array(GRID_WIDTH));
                 }
                 minY = editedY;
             }
             if (editedY > maxY) {
+                let inherited = activeRuleMap.get(toSlot(maxY)) ?? rule;
                 for (let y = maxY + 1; y < editedY; y++) {
-                    historyMap.set(y, new Uint8Array(GRID_WIDTH));
+                    const s = toSlot(y);
+                    if (!historyMap.has(s)) historyMap.set(s, new Uint8Array(GRID_WIDTH));
+                    inherited = activeRuleAt(y, inherited);
+                    activeRuleMap.set(s, inherited);
                 }
                 maxY = editedY;
+                const editedSlot = toSlot(editedY);
+                activeRuleMap.set(editedSlot, activeRuleAt(editedY, inherited));
                 updateBackButton();
                 return; // nothing below the new bottom row to recompute
             }
 
-            const ruleBinary = rule.toString(2).padStart(8, '0');
-            let currentRow = historyMap.get(editedY);
+            const editedSlot = toSlot(editedY);
+            let currentRow = historyMap.get(editedSlot);
+            let currentRule = activeRuleAt(editedY, activeRuleMap.get(editedSlot) ?? rule);
+            activeRuleMap.set(editedSlot, currentRule);
+
             for (let y = editedY + 1; y <= maxY; y++) {
+                const ruleBinary = currentRule.toString(2).padStart(8, '0');
                 currentRow = computeNextRow(currentRow, ruleBinary);
-                historyMap.set(y, currentRow);
+                const s = toSlot(y);
+                historyMap.set(s, currentRow);
+                currentRule = activeRuleAt(y, currentRule);
+                activeRuleMap.set(s, currentRule);
             }
             updateBackButton();
+            updateRuleLegend();
         }
 
         function draw() {
@@ -353,15 +531,18 @@
 
             // Only walk the rows actually visible on screen -- historyMap can grow to
             // thousands of rows during long play sessions, so this keeps draw() cheap.
+            // When the bottom loops, don't clamp to maxY: toSlot() tiles the same ring
+            // of rows infinitely, so panning past the loop shows the repeat for real.
             const viewTop = Math.floor(-offsetY / (cellSize * scale)) - 1;
             const viewBottom = Math.ceil((canvas.height - offsetY) / (cellSize * scale)) + 1;
-            const rowFrom = Math.max(minY, viewTop);
-            const rowTo = Math.min(maxY, viewBottom);
+            const rowFrom = yLoopEnabled ? viewTop : Math.max(minY, viewTop);
+            const rowTo = yLoopEnabled ? viewBottom : Math.min(maxY, viewBottom);
 
-            ctx.fillStyle = '#55c2da';
             for (let y = rowFrom; y <= rowTo; y++) {
-                const row = historyMap.get(y);
+                const s = toSlot(y);
+                const row = historyMap.get(s);
                 if (!row) continue;
+                ctx.fillStyle = ruleColor(activeRuleMap.get(s) ?? rule);
                 for (let x = 0; x < GRID_WIDTH; x++) {
                     if (row[x] === 1) {
                         ctx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
@@ -370,7 +551,7 @@
             }
 
             // Draw Overlay Pixels (Yellow)
-            ctx.fillStyle = '#ffd700'; 
+            ctx.fillStyle = '#ffd700';
             for (const key of overlayPixels) {
                 const [x, y] = key.split(',').map(Number);
                 ctx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
@@ -394,6 +575,27 @@
             canvas.className = e.target.value === 'pan' ? 'tool-pan' : 'tool-draw';
             btnClearOverlay.style.display = e.target.value === 'overlay' ? 'flex' : 'none';
         });
+
+        chkXWrap.addEventListener('change', () => {
+            // Only affects neighbor lookups going forward -- safe to flip live,
+            // no need to touch already-computed rows.
+            xWrap = chkXWrap.checked;
+        });
+
+        // Changing the loop topology remaps every storage key (see toSlot), so any
+        // rows already computed under the old mode would become unreadable garbage
+        // if left in place. Resetting is the only way to keep history consistent.
+        function applyYLoopSettings() {
+            pauseSimulation();
+            yLoopEnabled = chkYLoop.checked;
+            let period = parseInt(yLoopPeriodInput.value);
+            if (isNaN(period) || period < 2) period = 2;
+            yLoopPeriod = period;
+            yLoopPeriodInput.value = period;
+            init();
+        }
+        chkYLoop.addEventListener('change', applyYLoopSettings);
+        yLoopPeriodInput.addEventListener('change', applyYLoopSettings);
 
         btnClearOverlay.addEventListener('click', () => {
             overlayPixels.clear();
@@ -461,13 +663,14 @@
                 } 
                 else if (toolSelect.value === 'affect') {
                     const val = isErase ? 0 : 1;
+                    const s = toSlot(gridY);
 
-                    if (!historyMap.has(gridY)) {
-                        historyMap.set(gridY, new Uint8Array(GRID_WIDTH));
+                    if (!historyMap.has(s)) {
+                        historyMap.set(s, new Uint8Array(GRID_WIDTH));
                     }
 
-                    if (historyMap.get(gridY)[gridX] !== val) {
-                        historyMap.get(gridY)[gridX] = val;
+                    if (historyMap.get(s)[gridX] !== val) {
+                        historyMap.get(s)[gridX] = val;
 
                         // Row gridY is now a new timeline seed: resimulate everything below it.
                         cascadeFrom(gridY);
@@ -477,12 +680,24 @@
             }
         }
 
+        // A right-click is ambiguous until release: dragged, it's a pan; released in
+        // place, it's a tap that opens the per-row rule popup instead.
+        let rightClickStartX = 0;
+        let rightClickStartY = 0;
+        let rightClickMoved = false;
+        const RIGHT_CLICK_DRAG_THRESHOLD = 4;
+
         canvas.addEventListener('mousedown', (e) => {
             if (e.button === 2 || toolSelect.value === 'pan') {
                 isPanning = true;
                 lastMouseX = e.clientX;
                 lastMouseY = e.clientY;
                 canvas.classList.add('panning');
+                if (e.button === 2) {
+                    rightClickStartX = e.clientX;
+                    rightClickStartY = e.clientY;
+                    rightClickMoved = false;
+                }
             } else if (e.button === 0) {
                 isDrawing = true;
                 handleDraw(e);
@@ -497,6 +712,13 @@
             if (e.button === 0) {
                 isDrawing = false;
             }
+            if (e.button === 2 && !rightClickMoved) {
+                const gridX = Math.floor((e.clientX - offsetX) / (cellSize * scale));
+                const gridY = Math.floor((e.clientY - offsetY) / (cellSize * scale));
+                if (gridX >= 0 && gridX < GRID_WIDTH) {
+                    openRulePopup(e.clientX, e.clientY, gridY);
+                }
+            }
         });
 
         window.addEventListener('mousemove', (e) => {
@@ -507,11 +729,82 @@
                 offsetY += dy;
                 lastMouseX = e.clientX;
                 lastMouseY = e.clientY;
+                if (Math.hypot(e.clientX - rightClickStartX, e.clientY - rightClickStartY) > RIGHT_CLICK_DRAG_THRESHOLD) {
+                    rightClickMoved = true;
+                }
                 draw();
             } else if (isDrawing) {
                 handleDraw(e);
             }
         });
+
+        // --- Per-Row Rule Popup ---
+
+        let activeRulePopup = null;
+
+        function closeRulePopup() {
+            if (!activeRulePopup) return;
+            activeRulePopup.cleanup();
+            activeRulePopup.el.remove();
+            activeRulePopup = null;
+        }
+
+        function openRulePopup(clientX, clientY, gridY) {
+            closeRulePopup();
+
+            const currentSlot = toSlot(gridY);
+            const currentRuleAtRow = activeRuleMap.get(currentSlot) ?? rule;
+
+            const popup = document.createElement('div');
+            popup.id = 'row-rule-popup';
+            popup.style.left = `${clientX}px`;
+            popup.style.top = `${clientY}px`;
+            popup.innerHTML = `
+                <label>Rule for row ${gridY}:</label>
+                <input type="number" min="0" max="255" value="${currentRuleAtRow}">
+            `;
+            document.body.appendChild(popup);
+
+            const input = popup.querySelector('input');
+            input.focus();
+            input.select();
+
+            function outsideClick(e) {
+                if (!popup.contains(e.target)) finish(true);
+            }
+
+            let done = false;
+            function finish(shouldApply) {
+                if (done) return;
+                done = true;
+                document.removeEventListener('mousedown', outsideClick, true);
+                popup.remove();
+                if (activeRulePopup && activeRulePopup.el === popup) activeRulePopup = null;
+
+                if (shouldApply) {
+                    let v = parseInt(input.value);
+                    if (!isNaN(v)) {
+                        v = Math.max(0, Math.min(255, v));
+                        ruleOverrides.set(gridY, v);
+                        if (!historyMap.has(currentSlot)) {
+                            historyMap.set(currentSlot, new Uint8Array(GRID_WIDTH));
+                        }
+                        // Row gridY is now seeded with its own rule: resimulate everything below it.
+                        cascadeFrom(gridY);
+                        draw();
+                    }
+                }
+            }
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') finish(true);
+                else if (e.key === 'Escape') finish(false);
+            });
+            input.addEventListener('blur', () => finish(true));
+
+            activeRulePopup = { el: popup, cleanup: () => document.removeEventListener('mousedown', outsideClick, true) };
+            setTimeout(() => document.addEventListener('mousedown', outsideClick, true), 0);
+        }
 
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
