@@ -301,7 +301,7 @@
             <button id="btnPlay" title="Play / Pause">▶ Play</button>
             <button id="btnStep" title="Step Forward">⏭</button>
             <button id="btnReset" title="Reset Grid">🔄 Reset</button>
-            <button id="btnCenter" title="Center View">🎯 Center</button>
+            <button id="btnCenter" title="Fit whole grid on screen">🔍 Fit</button>
         </div>
 
         <div class="control-group">
@@ -521,6 +521,7 @@
             activeRuleMap.set(maxY, activeRuleAt(maxY, currentRule));
 
             updateBackButton();
+            refreshLiveRow();
             draw();
         }
 
@@ -530,6 +531,7 @@
             activeRuleMap.delete(maxY);
             maxY -= 1;
             updateBackButton();
+            refreshLiveRow();
             draw();
         }
 
@@ -718,20 +720,35 @@
                 ruleSequenceList.appendChild(item);
             });
 
-            // The rule currently governing the live, still-growing bottom edge of the
-            // grid -- not a fixed band you added, just a view onto what Play will use
-            // next and how many rows have run under it so far.
+            appendLiveRow();
+        }
+
+        // How many rows exist beyond the fixed sequence, and under what rule. Zero
+        // when the fixed sequence already reaches the bottom of history (e.g. right
+        // after applying it, before any extra stepping) -- there's nothing "live" yet
+        // distinct from the last fixed band, so callers should skip showing a row.
+        function getLiveRegion() {
             const fixedRows = bandSequence.reduce((sum, b) => sum + b.length, 0);
-            const liveRule = activeRuleMap.get(maxY) ?? rule;
-            const liveLength = Math.max(0, maxY - fixedRows + 1);
+            return {
+                rule: activeRuleMap.get(maxY) ?? rule,
+                length: Math.max(0, maxY - fixedRows + 1),
+            };
+        }
+
+        // The rule currently governing the live, still-growing bottom edge of the
+        // grid -- not a fixed band you added, just a view onto what Play will use
+        // next and how many rows have run under it so far.
+        function appendLiveRow() {
+            const live = getLiveRegion();
+            if (live.length <= 0) return; // nothing live yet beyond the fixed sequence
 
             const liveItem = document.createElement('div');
             liveItem.className = 'seq-item seq-item-live';
             liveItem.innerHTML = `
-                <span class="seq-swatch" style="background:${ruleColor(liveRule)}"></span>
+                <span class="seq-swatch" style="background:${ruleColor(live.rule)}"></span>
                 <label style="min-width:0;">Rule</label>
-                <input type="number" class="seq-rule-input" min="0" max="255" value="${liveRule}">
-                <span class="seq-label">${liveLength} row${liveLength === 1 ? '' : 's'}, playing</span>
+                <input type="number" class="seq-rule-input" min="0" max="255" value="${live.rule}">
+                <span class="seq-label">${live.length} row${live.length === 1 ? '' : 's'}, playing</span>
             `;
             const liveRuleField = liveItem.querySelector('.seq-rule-input');
             liveRuleField.addEventListener('change', () => {
@@ -742,6 +759,28 @@
                 setLiveRule(v);
             });
             ruleSequenceList.appendChild(liveItem);
+        }
+
+        // Cheap update called on every Play/Step tick -- keeps the live row's row
+        // count accurate while playing, without rebuilding (and losing focus/state
+        // in) the rest of the list on every single step.
+        function refreshLiveRow() {
+            const live = getLiveRegion();
+            const existing = ruleSequenceList.querySelector('.seq-item-live');
+
+            if (live.length <= 0) {
+                if (existing) existing.remove();
+                return;
+            }
+            if (!existing) {
+                appendLiveRow();
+                return;
+            }
+
+            existing.querySelector('.seq-swatch').style.background = ruleColor(live.rule);
+            existing.querySelector('.seq-label').textContent = `${live.length} row${live.length === 1 ? '' : 's'}, playing`;
+            const input = existing.querySelector('.seq-rule-input');
+            if (document.activeElement !== input) input.value = live.rule;
         }
 
         function applyBandSequence() {
@@ -799,13 +838,18 @@
             init();
         });
 
-        // Recenters the view on whatever's currently simulated (not a fixed spot),
-        // so it's useful even after playing/panning far from the starting point.
+        // Zooms/pans so the whole simulated grid (all rows, full width) fits on
+        // screen, rather than just recentering at a fixed scale -- useful after
+        // playing far enough that the content no longer fits at 1:1.
         function centerView() {
-            scale = 1;
-            offsetX = canvas.width / 2 - (GRID_WIDTH * cellSize) / 2;
+            const contentWidth = GRID_WIDTH * cellSize;
+            const contentHeight = (maxY - minY + 1) * cellSize;
+            const fitScale = Math.min(canvas.width / contentWidth, canvas.height / contentHeight);
+            scale = Math.max(0.1, Math.min(5.0, fitScale * 0.9)); // 0.9 for a little breathing room
+
+            offsetX = canvas.width / 2 - (GRID_WIDTH * cellSize * scale) / 2;
             const midY = (minY + maxY) / 2;
-            offsetY = canvas.height / 2 - midY * cellSize;
+            offsetY = canvas.height / 2 - midY * cellSize * scale;
             draw();
         }
         btnCenter.addEventListener('click', centerView);
