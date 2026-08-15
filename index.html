@@ -240,6 +240,14 @@
             <label style="min-width:0;">steps</label>
         </div>
 
+        <div class="control-group">
+            <label style="min-width:0;">Bands of</label>
+            <input type="number" id="bandHeightInput" min="1" max="500" value="10">
+            <label style="min-width:0;">rows, x</label>
+            <input type="number" id="bandCountInput" min="1" max="255" value="10">
+            <button id="btnApplyBands" title="Rule 1 for N rows, then rule 2, then rule 3, etc.">Apply</button>
+        </div>
+
         <div id="rule-visualizer"></div>
 
         <div id="rule-legend"></div>
@@ -308,6 +316,9 @@
         const chkXWrap = document.getElementById('chkXWrap');
         const chkYLoop = document.getElementById('chkYLoop');
         const yLoopPeriodInput = document.getElementById('yLoopPeriodInput');
+        const bandHeightInput = document.getElementById('bandHeightInput');
+        const bandCountInput = document.getElementById('bandCountInput');
+        const btnApplyBands = document.getElementById('btnApplyBands');
 
         function resizeCanvas() {
             canvas.width = window.innerWidth;
@@ -596,6 +607,33 @@
         }
         chkYLoop.addEventListener('change', applyYLoopSettings);
         yLoopPeriodInput.addEventListener('change', applyYLoopSettings);
+
+        // Stamps repeating rule bands from row 0 downward: `height` rows of rule 1,
+        // then `height` rows of rule 2, then rule 3, etc. (wrapping past 255).
+        // Sets one override per band, then reuses the normal cascade to fill in and
+        // recompute every row -- same mechanism as a manual per-row rule edit.
+        function applyRuleBands() {
+            pauseSimulation();
+
+            let height = parseInt(bandHeightInput.value);
+            let count = parseInt(bandCountInput.value);
+            if (isNaN(height) || height < 1) height = 1;
+            if (isNaN(count) || count < 1) count = 1;
+            bandHeightInput.value = height;
+            bandCountInput.value = count;
+
+            for (let b = 0; b < count; b++) {
+                ruleOverrides.set(b * height, (b % 255) + 1);
+            }
+
+            const bottomRow = height * count - 1;
+            if (bottomRow > maxY) cascadeFrom(bottomRow); // extend history to cover every band
+            cascadeFrom(0); // recompute top-to-bottom so each band's rule takes hold
+
+            updateRuleLegend();
+            draw();
+        }
+        btnApplyBands.addEventListener('click', applyRuleBands);
 
         btnClearOverlay.addEventListener('click', () => {
             overlayPixels.clear();
