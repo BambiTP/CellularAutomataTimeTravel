@@ -169,8 +169,8 @@
 
         <div class="hint">
             • <b>Right-Click</b> & drag to Pan anywhere<br>
-            • Draw <b>above or below</b> to spawn new timelines<br>
-            • Timelines propagate downward and clash!<br>
+            • Draw <b>above or below</b> to seed a new timeline<br>
+            • Editing a row instantly resimulates everything below it -- that's the clash<br>
             • Hold <b>Shift + Click</b> to Erase pixels
         </div>
     </div>
@@ -186,12 +186,15 @@
         let rule = 30;
         
         // Use a Map to support negative Y coordinates (above starting point) and positive Y coordinates
-        let historyMap = new Map(); 
-        let frontiers = new Set(); 
-        
+        let historyMap = new Map();
+        // The contiguous, always-consistent range of history we've computed.
+        // Every row in (minY, maxY] is guaranteed to be the true CA result of the row above it,
+        // EXCEPT immediately after a manual edit, which is resolved synchronously (see cascadeFrom).
+        let minY = 0;
+        let maxY = 0;
+
         let isPlaying = false;
         let playInterval;
-        let canStepBackward = true;
 
         // Drawing State
         let overlayPixels = new Set(); 
@@ -254,71 +257,90 @@
 
         function init() {
             historyMap.clear();
-            frontiers.clear();
-            
+
             let firstRow = new Uint8Array(GRID_WIDTH);
             firstRow[Math.floor(GRID_WIDTH / 2)] = 1;
-            
+
             historyMap.set(0, firstRow);
-            frontiers.add(0); 
+            minY = 0;
+            maxY = 0;
 
             offsetX = canvas.width / 2 - (GRID_WIDTH * cellSize) / 2;
             offsetY = 250; // Give vertical space to look both above and below Y=0
             scale = 1;
 
-            canStepBackward = true;
-            btnBack.disabled = false;
-            btnBack.title = "Step Backward";
-
+            updateBackButton();
             updateRuleVisualizer();
             draw();
         }
 
+        // Pure CA transition: one row -> the next row, given the current rule.
+        function computeNextRow(currentRow, ruleBinary) {
+            const nextRow = new Uint8Array(GRID_WIDTH);
+            for (let i = 0; i < GRID_WIDTH; i++) {
+                const left = currentRow[(i - 1 + GRID_WIDTH) % GRID_WIDTH];
+                const center = currentRow[i];
+                const right = currentRow[(i + 1) % GRID_WIDTH];
+
+                const neighborhood = (left << 2) | (center << 1) | right;
+                const bitIndex = 7 - neighborhood;
+                nextRow[i] = ruleBinary[bitIndex] === '1' ? 1 : 0;
+            }
+            return nextRow;
+        }
+
+        function updateBackButton() {
+            btnBack.disabled = maxY <= minY;
+            btnBack.title = btnBack.disabled ? "No earlier row to step back to" : "Step Backward";
+        }
+
         function stepForward() {
-            if (frontiers.size === 0) return; 
-
             const ruleBinary = rule.toString(2).padStart(8, '0');
-            let nextFrontiers = new Set();
-            let nextState = new Map();
-
-            for (let y of frontiers) {
-                const currentRow = historyMap.get(y);
-                if (!currentRow) continue;
-                
-                const nextRow = new Uint8Array(GRID_WIDTH);
-
-                for (let i = 0; i < GRID_WIDTH; i++) {
-                    const left = currentRow[(i - 1 + GRID_WIDTH) % GRID_WIDTH];
-                    const center = currentRow[i];
-                    const right = currentRow[(i + 1) % GRID_WIDTH];
-                    
-                    const neighborhood = (left << 2) | (center << 1) | right;
-                    const bitIndex = 7 - neighborhood; 
-                    nextRow[i] = parseInt(ruleBinary[bitIndex]);
-                }
-
-                nextState.set(y + 1, nextRow);
-            }
-
-            for (let [targetY, row] of nextState) {
-                historyMap.set(targetY, row);
-                nextFrontiers.add(targetY);
-            }
-
-            frontiers = nextFrontiers;
+            const currentRow = historyMap.get(maxY);
+            const nextRow = computeNextRow(currentRow, ruleBinary);
+            maxY += 1;
+            historyMap.set(maxY, nextRow);
+            updateBackButton();
             draw();
         }
 
         function stepBackward() {
-            if (!canStepBackward) return; 
-            // Simple linear step back for default Y=0 timeline
-            if (historyMap.size > 1 && historyMap.has(historyMap.size - 1)) {
-                const maxY = Math.max(...historyMap.keys());
-                historyMap.delete(maxY);
-                frontiers.clear();
-                frontiers.add(Math.max(...historyMap.keys()));
-                draw();
+            if (maxY <= minY) return;
+            historyMap.delete(maxY);
+            maxY -= 1;
+            updateBackButton();
+            draw();
+        }
+
+        // This is the "timeline" mechanic: editing row `editedY` makes it a new seed.
+        // Everything below it (down to the current bottom of history) is truly, synchronously
+        // recomputed from that seed -- not just visually, but a full recalculation -- so the
+        // grid is always internally consistent: no row is ever stale relative to the row above it.
+        // If the edit is above/below the known range, the range is extended (with blank rows
+        // filling any gap) so the cascade always has unbroken ground to walk down.
+        function cascadeFrom(editedY) {
+            if (editedY < minY) {
+                for (let y = editedY + 1; y < minY; y++) {
+                    historyMap.set(y, new Uint8Array(GRID_WIDTH));
+                }
+                minY = editedY;
             }
+            if (editedY > maxY) {
+                for (let y = maxY + 1; y < editedY; y++) {
+                    historyMap.set(y, new Uint8Array(GRID_WIDTH));
+                }
+                maxY = editedY;
+                updateBackButton();
+                return; // nothing below the new bottom row to recompute
+            }
+
+            const ruleBinary = rule.toString(2).padStart(8, '0');
+            let currentRow = historyMap.get(editedY);
+            for (let y = editedY + 1; y <= maxY; y++) {
+                currentRow = computeNextRow(currentRow, ruleBinary);
+                historyMap.set(y, currentRow);
+            }
+            updateBackButton();
         }
 
         function draw() {
@@ -329,13 +351,21 @@
             ctx.translate(offsetX, offsetY);
             ctx.scale(scale, scale);
 
-            // Draw CA Cells from the coordinate map (supports negative and positive Y)
-            ctx.fillStyle = '#55c2da'; 
-            for (let [y, row] of historyMap.entries()) {
+            // Only walk the rows actually visible on screen -- historyMap can grow to
+            // thousands of rows during long play sessions, so this keeps draw() cheap.
+            const viewTop = Math.floor(-offsetY / (cellSize * scale)) - 1;
+            const viewBottom = Math.ceil((canvas.height - offsetY) / (cellSize * scale)) + 1;
+            const rowFrom = Math.max(minY, viewTop);
+            const rowTo = Math.min(maxY, viewBottom);
+
+            ctx.fillStyle = '#55c2da';
+            for (let y = rowFrom; y <= rowTo; y++) {
+                const row = historyMap.get(y);
+                if (!row) continue;
                 for (let x = 0; x < GRID_WIDTH; x++) {
                     if (row[x] === 1) {
                         ctx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
-                    } 
+                    }
                 }
             }
 
@@ -431,20 +461,16 @@
                 } 
                 else if (toolSelect.value === 'affect') {
                     const val = isErase ? 0 : 1;
-                    
+
                     if (!historyMap.has(gridY)) {
                         historyMap.set(gridY, new Uint8Array(GRID_WIDTH));
                     }
-                    
+
                     if (historyMap.get(gridY)[gridX] !== val) {
                         historyMap.get(gridY)[gridX] = val;
-                        
-                        // Any drawn row (above or below) becomes an active timeline frontier!
-                        frontiers.add(gridY);
-                        
-                        canStepBackward = false;
-                        btnBack.disabled = true;
-                        btnBack.title = "Timelines are clashing. Reset to enable backward stepping.";
+
+                        // Row gridY is now a new timeline seed: resimulate everything below it.
+                        cascadeFrom(gridY);
                         draw();
                     }
                 }
