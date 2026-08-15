@@ -512,7 +512,11 @@
 
         function stepForward() {
             const currentRow = historyMap.get(maxY);
-            const currentRule = activeRuleMap.get(maxY) ?? rule;
+            // A live rule switch (setLiveRule) registers its override one row ahead,
+            // at maxY+1 -- the row about to be born -- specifically so it never has
+            // to touch row maxY's own stored value and retroactively repaint a row
+            // that's already been played.
+            const currentRule = activeRuleAt(maxY + 1, activeRuleMap.get(maxY) ?? rule);
             const ruleBinary = currentRule.toString(2).padStart(8, '0');
             const nextRow = computeNextRow(currentRow, ruleBinary);
 
@@ -618,13 +622,19 @@
 
         // --- Event Listeners UI ---
 
-        // Sets the rule for the live, still-growing bottom edge of the grid (row maxY),
-        // so the very next Play/Step actually uses it -- and makes it stick through any
-        // later cascade by registering it as a real override, not just a display value.
+        // Sets the rule for whatever gets played next. Whatever's already been played
+        // under the current live rule is locked in as its own fixed band first --
+        // switching rules mid-play splits the timeline at exactly this point, it
+        // never repaints rows that already played under the old rule. The new rule
+        // is registered one row ahead (see stepForward), so it takes effect starting
+        // with the very next row rather than retroactively.
         function setLiveRule(val) {
+            const live = getLiveRegion();
+            if (live.length > 0 && val !== live.rule) {
+                bandSequence.push({ rule: live.rule, length: live.length });
+            }
             rule = val;
-            ruleOverrides.set(maxY, val);
-            activeRuleMap.set(maxY, val);
+            ruleOverrides.set(maxY + 1, val);
             updateRuleVisualizer();
             renderBandSequence();
         }
