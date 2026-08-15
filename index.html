@@ -16,49 +16,50 @@
         .panel {
             position: absolute;
             background: rgba(20, 25, 32, 0.95);
-            padding: 16px;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
             z-index: 10;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 8px;
             border: 1px solid #2a3241;
             backdrop-filter: blur(4px);
-            max-width: 280px;
+            max-width: 230px;
         }
 
-        #panel-controls { top: 20px; left: 20px; }
-        #panel-sequence { top: 20px; right: 20px; max-height: 70vh; overflow-y: auto; }
-        #panel-info { bottom: 20px; left: 20px; }
-        #panel-hint { bottom: 20px; right: 20px; }
+        #panel-controls { top: 12px; left: 12px; }
+        #panel-sequence { top: 12px; right: 12px; max-height: 60vh; overflow-y: auto; }
+        #panel-info { bottom: 12px; left: 12px; }
+        #panel-hint { bottom: 12px; right: 12px; }
 
         .control-group {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 6px;
+            flex-wrap: wrap;
         }
 
         label {
             font-weight: bold;
-            font-size: 14px;
-            min-width: 40px;
+            font-size: 12px;
+            min-width: 30px;
         }
 
         input[type="number"], select {
-            padding: 6px;
+            padding: 3px;
             border: 1px solid #3c465a;
             background: #181d26;
             color: #fff;
-            border-radius: 6px;
-            font-size: 14px;
+            border-radius: 5px;
+            font-size: 12px;
             outline: none;
         }
 
         input[type="number"] {
-            width: 70px;
+            width: 48px;
             text-align: center;
-            font-size: 16px;
+            font-size: 13px;
         }
 
         input[type="number"]:focus, select:focus {
@@ -69,10 +70,10 @@
             background: #232b38;
             color: #fff;
             border: 1px solid #3c465a;
-            padding: 8px 12px;
-            border-radius: 6px;
+            padding: 4px 7px;
+            border-radius: 5px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
             transition: all 0.2s ease;
             display: flex;
             align-items: center;
@@ -98,10 +99,11 @@
 
         #rule-visualizer {
             display: flex;
-            gap: 8px;
+            flex-wrap: wrap;
+            gap: 4px;
             background: #11151c;
-            padding: 12px;
-            border-radius: 8px;
+            padding: 6px;
+            border-radius: 6px;
             border: 1px solid #2a3241;
             justify-content: center;
         }
@@ -119,8 +121,8 @@
         }
 
         .v-cell {
-            width: 14px;
-            height: 14px;
+            width: 9px;
+            height: 9px;
             box-sizing: border-box;
             border: 1px solid #444;
             background-color: transparent;
@@ -130,30 +132,37 @@
             background-color: #55c2da;
             border-color: #55c2da;
         }
-        
+
         .hint {
-            font-size: 12px;
+            font-size: 10px;
             color: #888;
-            margin-top: 5px;
-            line-height: 1.5;
+            line-height: 1.4;
+            margin-top: 6px;
+        }
+
+        #panel-hint summary {
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            outline: none;
+            user-select: none;
         }
 
         #rule-legend {
             display: flex;
             flex-wrap: wrap;
-            gap: 6px;
-            max-width: 260px;
+            gap: 4px;
         }
 
         .legend-chip {
             display: flex;
             align-items: center;
-            gap: 5px;
-            font-size: 11px;
+            gap: 4px;
+            font-size: 10px;
             background: #181d26;
             border: 1px solid #2a3241;
-            border-radius: 10px;
-            padding: 2px 8px 2px 4px;
+            border-radius: 8px;
+            padding: 1px 6px 1px 4px;
         }
 
         .legend-swatch {
@@ -172,12 +181,13 @@
         .seq-item {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 13px;
+            flex-wrap: wrap;
+            gap: 4px;
+            font-size: 12px;
             background: #181d26;
             border: 1px solid #2a3241;
             border-radius: 6px;
-            padding: 5px 8px;
+            padding: 4px 6px;
             user-select: none;
             transition: opacity 0.15s ease, border-color 0.15s ease;
         }
@@ -205,25 +215,36 @@
 
         .seq-item label {
             font-weight: normal;
-            font-size: 12px;
+            font-size: 11px;
             color: #999;
+            min-width: 0;
         }
 
         .seq-item input[type="number"] {
-            width: 44px;
-            padding: 3px;
-            font-size: 13px;
+            width: 36px;
+            padding: 2px;
+            font-size: 12px;
         }
 
         .seq-item button {
-            padding: 2px 8px;
-            font-size: 12px;
+            padding: 1px 6px;
+            font-size: 11px;
             margin-left: auto;
         }
 
+        .seq-item .seq-label {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .seq-item-live {
+            border-style: dashed;
+            border-color: #3c465a;
+        }
+
         input[type="checkbox"] {
-            width: 15px;
-            height: 15px;
+            width: 13px;
+            height: 13px;
             accent-color: #55c2da;
             cursor: pointer;
         }
@@ -231,8 +252,8 @@
         .checkbox-label {
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-size: 13px;
+            gap: 5px;
+            font-size: 12px;
             font-weight: normal;
             min-width: 0;
             cursor: pointer;
@@ -243,22 +264,22 @@
             z-index: 100;
             background: rgba(20, 25, 32, 0.98);
             border: 1px solid #55c2da;
-            border-radius: 8px;
-            padding: 8px 10px;
+            border-radius: 7px;
+            padding: 6px 8px;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 3px;
         }
 
         #row-rule-popup label {
-            font-size: 11px;
+            font-size: 10px;
             color: #aaa;
             min-width: 0;
         }
 
         #row-rule-popup input {
-            width: 60px;
+            width: 50px;
         }
 
         canvas {
@@ -280,6 +301,7 @@
             <button id="btnPlay" title="Play / Pause">▶ Play</button>
             <button id="btnStep" title="Step Forward">⏭</button>
             <button id="btnReset" title="Reset Grid">🔄 Reset</button>
+            <button id="btnCenter" title="Center View">🎯 Center</button>
         </div>
 
         <div class="control-group">
@@ -296,9 +318,9 @@
     <div id="panel-sequence" class="panel">
         <div class="control-group">
             <label style="min-width:0;">Add rule</label>
-            <input type="number" id="seqRuleInput" min="0" max="255" value="90" style="width:55px;">
+            <input type="number" id="seqRuleInput" min="0" max="255" value="90" style="width:42px;">
             <label style="min-width:0;">for</label>
-            <input type="number" id="seqLengthInput" min="1" max="2000" value="10" style="width:55px;">
+            <input type="number" id="seqLengthInput" min="1" max="2000" value="10" style="width:42px;">
             <label style="min-width:0;">rows</label>
             <button id="btnAddBand" title="Appends this rule below whatever's already in the sequence">+ Add</button>
         </div>
@@ -312,13 +334,16 @@
     </div>
 
     <div id="panel-hint" class="panel">
-        <div class="hint">
-            • <b>Right-Click</b> & drag to Pan anywhere<br>
-            • <b>Right-Click</b> (no drag) a row to give it its own rule -- each rule gets its own color<br>
-            • Draw <b>above or below</b> to seed a new timeline<br>
-            • Editing a row instantly resimulates everything below it -- that's the clash<br>
-            • Hold <b>Shift + Click</b> to Erase pixels
-        </div>
+        <details>
+            <summary>Tips</summary>
+            <div class="hint">
+                • <b>Right-Click</b> & drag to Pan anywhere<br>
+                • <b>Right-Click</b> (no drag) a row to give it its own rule -- each rule gets its own color<br>
+                • Draw <b>above or below</b> to seed a new timeline<br>
+                • Editing a row instantly resimulates everything below it -- that's the clash<br>
+                • Hold <b>Shift + Click</b> to Erase pixels
+            </div>
+        </details>
     </div>
 
     <canvas id="ca-canvas" class="tool-pan"></canvas>
@@ -364,6 +389,7 @@
         const btnStep = document.getElementById('btnStep');
         const btnBack = document.getElementById('btnBack');
         const btnReset = document.getElementById('btnReset');
+        const btnCenter = document.getElementById('btnCenter');
         const ruleVisualizer = document.getElementById('rule-visualizer');
         const ruleLegend = document.getElementById('rule-legend');
         const toolSelect = document.getElementById('toolSelect');
@@ -413,12 +439,12 @@
             }
         }
 
+        // Reset only clears the simulated grid (cell drawings/history) -- it deliberately
+        // leaves ruleOverrides/bandSequence alone and re-lays them onto the fresh grid,
+        // so resetting the drawing doesn't throw away the rule setup you built.
         function init() {
             historyMap.clear();
-            ruleOverrides.clear();
             activeRuleMap.clear();
-            bandSequence = [];
-            sequenceOverrideYs = [];
 
             let firstRow = new Uint8Array(GRID_WIDTH);
             firstRow[Math.floor(GRID_WIDTH / 2)] = 1;
@@ -434,9 +460,7 @@
 
             updateBackButton();
             updateRuleVisualizer();
-            updateRuleLegend();
-            renderBandSequence();
-            draw();
+            applyBandSequence(); // re-applies the existing sequence (or no-ops if empty)
         }
 
         // Pure CA transition: one row -> the next row, given the current rule.
@@ -592,13 +616,23 @@
 
         // --- Event Listeners UI ---
 
+        // Sets the rule for the live, still-growing bottom edge of the grid (row maxY),
+        // so the very next Play/Step actually uses it -- and makes it stick through any
+        // later cascade by registering it as a real override, not just a display value.
+        function setLiveRule(val) {
+            rule = val;
+            ruleOverrides.set(maxY, val);
+            activeRuleMap.set(maxY, val);
+            updateRuleVisualizer();
+            renderBandSequence();
+        }
+
         ruleInput.addEventListener('change', (e) => {
             let val = parseInt(e.target.value);
             if (val < 0) val = 0;
             if (val > 255) val = 255;
             ruleInput.value = val;
-            rule = val;
-            updateRuleVisualizer();
+            setLiveRule(val);
         });
 
         toolSelect.addEventListener('change', (e) => {
@@ -683,6 +717,31 @@
 
                 ruleSequenceList.appendChild(item);
             });
+
+            // The rule currently governing the live, still-growing bottom edge of the
+            // grid -- not a fixed band you added, just a view onto what Play will use
+            // next and how many rows have run under it so far.
+            const fixedRows = bandSequence.reduce((sum, b) => sum + b.length, 0);
+            const liveRule = activeRuleMap.get(maxY) ?? rule;
+            const liveLength = Math.max(0, maxY - fixedRows + 1);
+
+            const liveItem = document.createElement('div');
+            liveItem.className = 'seq-item seq-item-live';
+            liveItem.innerHTML = `
+                <span class="seq-swatch" style="background:${ruleColor(liveRule)}"></span>
+                <label style="min-width:0;">Rule</label>
+                <input type="number" class="seq-rule-input" min="0" max="255" value="${liveRule}">
+                <span class="seq-label">${liveLength} row${liveLength === 1 ? '' : 's'}, playing</span>
+            `;
+            const liveRuleField = liveItem.querySelector('.seq-rule-input');
+            liveRuleField.addEventListener('change', () => {
+                let v = parseInt(liveRuleField.value);
+                if (isNaN(v)) v = 0;
+                v = Math.max(0, Math.min(255, v));
+                ruleInput.value = v;
+                setLiveRule(v);
+            });
+            ruleSequenceList.appendChild(liveItem);
         }
 
         function applyBandSequence() {
@@ -739,6 +798,17 @@
             pauseSimulation();
             init();
         });
+
+        // Recenters the view on whatever's currently simulated (not a fixed spot),
+        // so it's useful even after playing/panning far from the starting point.
+        function centerView() {
+            scale = 1;
+            offsetX = canvas.width / 2 - (GRID_WIDTH * cellSize) / 2;
+            const midY = (minY + maxY) / 2;
+            offsetY = canvas.height / 2 - midY * cellSize;
+            draw();
+        }
+        btnCenter.addEventListener('click', centerView);
 
         btnPlay.addEventListener('click', () => {
             if (isPlaying) pauseSimulation();
